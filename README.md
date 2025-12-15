@@ -165,6 +165,8 @@ The project is intentionally built using **basic web technologies**:
 - Multi-station management
 - Carbon footprint analytics
 
+## click here to see the website : https://balaji160807.github.io/EV-STATION-AI-PORTAL/
+
 ---## 🤝 Contributing
 
 Contributions are welcome!  

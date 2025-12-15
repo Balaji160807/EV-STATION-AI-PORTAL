@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EV Station Owner Portal | AI Energy Management (Live)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* Custom Switch for a better UI look */
+        .switch { position: relative; display: inline-block; width: 48px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #0d9488; } 
+        input:focus + .slider { box-shadow: 0 0 1px #0d9488; }
+        input:checked + .slider:before { transform: translateX(20px); }
+        
+        /* Custom Scrollbar for the main content area */
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #3b82f6; border-radius: 4px; } /* Blue/Teal thumb */
+        .custom-scroll::-webkit-scrollbar-track { background-color: #e5e7eb; } /* Light gray track */
+
+        /* Updated log-grid to show only Time, Type, Message, Details */
+        .log-grid { display: grid; grid-template-columns: 80px 100px 1fr auto; align-items: center; gap: 1rem; }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex antialiased">
+
+    <div id="login-screen" class="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-96 text-center">
+            <h2 class="text-3xl font-extrabold text-teal-600 mb-4">Portal Locked 🔒</h2>
+            <p class="text-gray-600 mb-6">You have been logged out. Please log in to continue managing your station.</p>
+            <button onclick="login()" class="w-full p-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition duration-150 shadow-md">
+                Log In as Owner
+            </button>
+        </div>
+    </div>
+    
+    <div id="main-app-container" class="min-h-screen w-full flex">
+        <aside id="sidebar" class="w-64 bg-gray-900 text-white p-4 space-y-6 flex-col h-screen sticky top-0 shadow-2xl flex">
+            <div class="text-2xl font-extrabold text-teal-400 border-b border-gray-700 pb-4">
+                ⚡ EV Station AI Portal
+            </div>
+            <nav class="space-y-2 flex-1">
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150 active-link" data-page="dashboard">🏠 Dashboard (Live)</a>
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150" data-page="sessions">🔌 Charging Sessions</a>
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150" data-page="grid">📈 Energy & Grid Load</a>
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150" data-page="logs">🤖 AI Optimization Logs</a>
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150" data-page="revenue">💰 Revenue & Reports</a>
+                <a href="#" class="nav-link block p-3 rounded-lg hover:bg-gray-700 transition duration-150" data-page="settings">⚙️ Settings</a>
+            </nav>
+            <div class="pt-4 border-t border-gray-700">
+                <div class="text-sm">Owner: **Alice Johnson**</div>
+                <button onclick="logout()" class="mt-2 w-full text-center p-2 text-sm bg-red-600 rounded hover:bg-red-700 transition duration-150">Logout</button>
+            </div>
+        </aside>
+
+        <main class="flex-1 p-8 overflow-y-auto custom-scroll">
+            <div id="content-area" class="min-h-full">
+                <div class="text-center text-xl text-gray-500 pt-20">Loading Dashboard...</div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        
+        let isLoggedIn = true; // New state variable
+
+        // Chart.js instance variable
+        let loadChart = null; 
+
+        // --- Data Simulation ---
+        let stationData = {
+            totalEVs: 12, // The total number of EVs currently connected
+            chargersInUse: 8,
+            chargersAvailable: 4,
+            gridLoad: 75, // Live Grid Load (kW)
+            loadLimit: 100, // Grid Load Limit (kW) - User adjustable
+            powerConsumed: 55.0, // Total Power Consumed by all EVs (kW)
+            aiStatus: "Active - Load Balancing",
+            defaultPriority: "Medium", // New setting
+            masterAiEnabled: true, // NEW: Master control for the AI system
+            // Revenue Data
+            revenueToday: 450.75,
+            energyCostToday: 112.30,
+            costSavingsAI: 35.10,
+            peakAvoidanceSavings: 15.50,
+            avgPricePerkWh: 0.25, // Setting
+            fixedMonthlyFee: 1500.00, // Setting (Simulated fixed revenue)
+        };
+
+        let chargingSessions = [
+            { id: 'EV-12', charger: 1, battery: 65, target: 80, departure: '18:30', priority: 'Low', status: 'Slowing (Grid)', power: 5.5, aiDisabled: false, isPaused: false },
+            { id: 'EV-07', charger: 3, battery: 85, target: 95, departure: '19:50', priority: 'High', status: 'Boosting', power: 15.0, aiDisabled: false, isPaused: false },
+            { id: 'EV-03', charger: 5, battery: 12, target: 100, departure: '22:00', priority: 'Low', status: 'Active (Slow)', power: 3.0, aiDisabled: false, isPaused: false },
+            { id: 'EV-19', charger: 8, battery: 45, target: 90, departure: '21:30', priority: 'Medium', status: 'Charging Normal', power: 7.7, aiDisabled: false, isPaused: false },
+            { id: 'EV-21', charger: 2, battery: 20, target: 80, departure: '20:00', priority: 'Medium', status: 'Charging Normal', power: 7.0, aiDisabled: false, isPaused: false },
+            { id: 'EV-30', charger: 10, battery: 0, target: 90, departure: '19:30', priority: 'High', status: 'New Arrival', power: 0.0, aiDisabled: false, isPaused: false },
+        ];
+        
+        // Added log ID for detail tracking
+        let logIdCounter = 1;
+        let aiLogs = [
+            { id: logIdCounter++, time: new Date().toLocaleTimeString('en-US', { hour12: false }), type: 'Alert', message: '⚠️ **Grid Load High** — slowing non-urgent charging.', details: 'The 5-minute average grid load exceeded 85% of the limit. AI has initiated a low-priority throttling action.' },
+            { id: logIdCounter++, time: new Date(Date.now() - 5 * 60000).toLocaleTimeString('en-US', { hour12: false }), type: 'Action', message: 'EV-12 slowed down due to high grid load.', details: 'EV-12 (low priority) was throttled from 7.0kW to 2.8kW to keep system load stable.' },
+            { id: logIdCounter++, time: new Date(Date.now() - 10 * 60000).toLocaleTimeString('en-US', { hour12: false }), type: 'Action', message: 'EV-07 upgraded to **High Priority** (leaving in 20 min) by Owner.', details: 'Owner manually adjusted priority. AI will prioritize this session and avoid throttling.' },
+            { id: logIdCounter++, time: new Date(Date.now() - 25 * 60000).toLocaleTimeString('en-US', { hour12: false }), type: 'Info', message: 'Switching to solar-only mode for 12 minutes.', details: 'The system has transitioned to renewable energy sourcing based on peak rate predictions.' },
+        ];
+
+        let loadHistory = [80, 75, 78, 85, 92, 75]; // Initial 6 data points
+        let loadHistoryLabels = ['-5min', '-4min', '-3min', '-2min', '-1min', 'Now'];
+
+
+        // --- Auth Functions (Fix for Logged Out Issue) ---
+        
+        function login() {
+            isLoggedIn = true;
+            document.getElementById('login-screen').classList.add('hidden');
+            // Ensure main app container is visible upon login
+            document.getElementById('main-app-container').classList.remove('hidden');
+            document.getElementById('sidebar').classList.remove('hidden');
+            navigateTo('dashboard');
+        }
+
+        /* CONDITION CHANGE: 
+            Updated logout function to always go to the login screen.
+        */
+        function logout() {
+            isLoggedIn = false;
+            // Clear content and show the login screen (Request: go back into the login page)
+            renderLogin();
+            aiLogs.unshift({ 
+                id: logIdCounter++, 
+                time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                type: 'Info', 
+                message: 'User logged out. Session ended.',
+                details: 'User manually terminated the session.' 
+            });
+        }
+        
+        function renderLogin() {
+            document.getElementById('content-area').innerHTML = '';
+            // Hide main app container, show login screen
+            document.getElementById('main-app-container').classList.add('hidden');
+            document.getElementById('sidebar').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+        }
+
+        // --- Navigation Functions ---
+
+        function navigateTo(page) {
+            if (!isLoggedIn) {
+                // Prevents any content rendering when logged out
+                console.log(`Navigation blocked: Not logged in. Attempted page: ${page}`);
+                renderLogin(); 
+                return;
+            }
+
+            const links = document.querySelectorAll('.nav-link');
+            links.forEach(link => {
+                link.classList.remove('bg-teal-700', 'text-white');
+                link.classList.add('text-gray-300');
+            });
+
+            const activeLink = document.querySelector(`.nav-link[data-page="${page}"]`);
+            if (activeLink) {
+                activeLink.classList.add('bg-teal-700', 'text-white');
+                activeLink.classList.remove('text-gray-300', 'hover:bg-gray-700');
+            }
+
+            // Destroy the chart before re-rendering if it exists
+            if (loadChart) {
+                loadChart.destroy();
+                loadChart = null;
+            }
+
+            switch(page) {
+                case 'dashboard': renderDashboard(); break;
+                case 'sessions': renderSessions(); break;
+                case 'grid': renderGrid(); break;
+                case 'logs': renderLogs(); break;
+                case 'revenue': renderRevenue(); break; // Renders the NEW content
+                case 'settings': renderSettings(); break;
+                default: renderDashboard();
+            }
+        }
+        
+        function getCurrentPage() {
+            const activeLink = document.querySelector('.nav-link.bg-teal-700');
+            return activeLink ? activeLink.dataset.page : null;
+        }
+
+        function reRenderCurrentPage() {
+            if (!isLoggedIn) return; // Auth Guard
+            
+            const currentPage = getCurrentPage();
+            if (currentPage) {
+                // Destroy the chart before re-rendering if it exists
+                if (loadChart) {
+                    loadChart.destroy();
+                    loadChart = null;
+                }
+
+                // Call the appropriate render function based on the active page
+                switch(currentPage) {
+                    case 'dashboard': renderDashboard(); break;
+                    case 'sessions': renderSessions(); break;
+                    case 'grid': renderGrid(); break;
+                    case 'logs': renderLogs(); break;
+                    case 'revenue': renderRevenue(); break;
+                    case 'settings': renderSettings(); break;
+                }
+            }
+        }
+
+        // --- Data Update Loop ---
+        function updateLiveData() {
+            if (!isLoggedIn) return; // Do not update data if logged out
+
+            // 1. Simulate Live Grid & Power Data Changes
+            const currentGridLoad = stationData.gridLoad;
+            const maxChange = 5;
+            let newGridLoad = currentGridLoad + (Math.random() - 0.5) * maxChange * 2;
+            newGridLoad = Math.max(0, Math.min(stationData.loadLimit + 10, newGridLoad)); 
+            stationData.gridLoad = Math.round(newGridLoad);
+
+            // Update Load History for Chart
+            loadHistory.shift();
+            loadHistory.push(stationData.gridLoad);
+            loadHistoryLabels.shift();
+            loadHistoryLabels.push(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+
+
+            // 2. Simulate Charging Sessions Updates (Battery, Power, Status)
+            let totalPower = 0;
+            stationData.chargersInUse = 0;
+            stationData.totalEVs = 0;
+            
+            chargingSessions = chargingSessions.filter(session => session.battery < 100);
+
+            chargingSessions.forEach(session => {
+                stationData.totalEVs++;
+                stationData.chargersInUse++;
+
+                if (session.isPaused) {
+                    session.power = 0.0;
+                    session.status = 'Paused by Owner';
+                    return;
+                }
+
+                if (session.battery < session.target) {
+                    let basePower = 7.0;
+                    if (session.priority === 'High') basePower = 15.0;
+                    else if (session.priority === 'Low') basePower = 3.0;
+
+                    // AI Load Balancing Logic
+                    if (stationData.masterAiEnabled && !session.aiDisabled) {
+                        if (stationData.gridLoad > stationData.loadLimit - 10 && session.priority === 'Low') {
+                            session.power = Math.max(0.5, basePower * 0.4); 
+                            session.status = 'AI Slowing (Grid)';
+                            if (Math.random() < 0.05) { // 5% chance to log an action
+                                aiLogs.unshift({ 
+                                    id: logIdCounter++,
+                                    time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                                    type: 'Action', 
+                                    message: `AI slowed **${session.id}** on Charger #${session.charger}. Current Draw: ${session.power.toFixed(1)}kW`,
+                                    details: `Load was high (${stationData.gridLoad}kW). Power reduced to ${session.power.toFixed(1)}kW. Expected savings: $1.20 per hour for this session.`
+                                });
+                            }
+                        } else if (stationData.gridLoad < stationData.loadLimit - 20 && session.priority === 'High') {
+                            session.power = Math.min(22.0, basePower * 1.2); 
+                            session.status = 'AI Boosting (Reserve)';
+                        } else {
+                            session.power = basePower + (Math.random() - 0.5) * 1.0;
+                            session.status = 'Charging Normal';
+                        }
+                    } else {
+                           // Fallback when AI is disabled
+                         session.power = basePower + (Math.random() - 0.5) * 1.0;
+                         session.status = stationData.masterAiEnabled ? 'AI Disabled by Owner' : 'AI Master Disabled';
+                    }
+
+                    const chargeRate = session.power / 200; 
+                    session.battery = Math.min(session.target, session.battery + chargeRate);
+
+                    totalPower += session.power;
+                } else {
+                    session.power = 0.0;
+                    session.status = 'Complete (Ready to Go)';
+                    stationData.chargersInUse--;
+                }
+            });
+            stationData.powerConsumed = totalPower;
+            stationData.chargersAvailable = 12 - stationData.chargersInUse;
+
+            // 3. AI Status Update based on current load
+            if (!stationData.masterAiEnabled) {
+                stationData.aiStatus = "🔴 MASTER CONTROL DISABLED";
+            } else if (stationData.gridLoad > stationData.loadLimit * 0.95) {
+                if (stationData.aiStatus !== "CRITICAL - Hard Load Limit Enforced") {
+                    stationData.aiStatus = "CRITICAL - Hard Load Limit Enforced";
+                    aiLogs.unshift({ 
+                        id: logIdCounter++, 
+                        time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                        type: 'Alert', 
+                        message: '🔴 **Hard Limit Reached** — AI is aggressively slowing all non-High EVs.',
+                        details: `System integrity is at risk. All sessions set to minimum power to prevent fuse blow or penalty fees.`
+                    });
+                }
+            } else if (stationData.gridLoad > stationData.loadLimit * 0.8) {
+                if (stationData.aiStatus !== "Active - Load Balancing (High Grid)") {
+                    stationData.aiStatus = "Active - Load Balancing (High Grid)";
+                }
+            } else {
+                if (stationData.aiStatus !== "Active - Normal Optimization") {
+                    stationData.aiStatus = "Active - Normal Optimization";
+                }
+            }
+
+            // Simulate Revenue change for visual effect
+            stationData.revenueToday += totalPower * stationData.avgPricePerkWh * 0.01; 
+            stationData.energyCostToday += totalPower * 0.01 * 0.005; // Base cost increase
+            stationData.costSavingsAI += Math.max(0, (stationData.gridLoad > stationData.loadLimit * 0.9) ? 0.5 : 0.05);
+
+            reRenderCurrentPage();
+        }
+
+        // --- Log Detail Function (New functionality to satisfy "only respond not to show its working") ---
+        function showLogDetails(logId) {
+            if (!isLoggedIn) {
+                renderLogin();
+                return;
+            }
+
+            const log = aiLogs.find(l => l.id == logId);
+            if (log) {
+                let detailMessage = `**Log ID:** ${log.id}<br>**Log Type:** ${log.type}<br>**Time:** ${log.time}<br>**Message:** ${log.message.replace(/(\*\*)/g, '<b>$&</b>')}<br><br>`;
+                
+                // Use the new 'details' property for detailed context
+                detailMessage += `🤖 **AI/System Details:**<br>${log.details.replace(/(\*\*)/g, '<b>$&</b>')}`;
+
+                document.getElementById('content-area').innerHTML = `
+                    <h2 class="text-4xl font-extrabold text-gray-800 mb-8">Detailed Log #${log.id}</h2>
+                    <div class="bg-white p-8 rounded-xl shadow-xl border-t-4 border-teal-500">
+                        <p class="text-lg text-gray-700">${detailMessage.replace(/\n/g, '<br>')}</p>
+                        <button onclick="navigateTo('logs')" class="mt-6 p-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition shadow-md">← Back to Logs</button>
+                    </div>
+                `;
+            } else {
+                 document.getElementById('content-area').innerHTML = `<h2 class="text-4xl font-extrabold text-gray-800 mb-8">Error</h2><p>Log entry not found.</p><button onclick="navigateTo('logs')" class="mt-6 p-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition shadow-md">← Back to Logs</button>`;
+            }
+        }
+        
+        // Helper function to create the correct button for the logs page
+        function getLogButton(log) {
+            const detailText = log.type === 'Alert' ? 'Alert Response' : log.type === 'Action' ? 'Action Details' : 'View Details';
+            let buttonClass = 'bg-gray-400 hover:bg-gray-500'; // Default for Info
+            
+            if (log.type === 'Alert') { 
+                buttonClass = 'bg-red-600 hover:bg-red-700';
+            }
+            if (log.type === 'Action') { 
+                buttonClass = 'bg-blue-600 hover:bg-blue-700';
+            }
+
+            // The button action is now handled by showLogDetails, fulfilling the "only respond not to show its working" requirement.
+            return `<button onclick="showLogDetails(${log.id})" class="text-xs px-3 py-1 text-white rounded-md transition shadow-sm ${buttonClass}">
+                ${detailText}
+            </button>`;
+        }
+
+
+        // --- Utility/Helper Functions ---
+        function getPriorityEffect(priority) {
+            switch(priority) {
+                case 'High': return 'Max speed, AI avoids slowdown.';
+                case 'Medium': return 'Standard speed, AI may adjust for load.';
+                case 'Low': return 'Slow speed, AI throttles first during peak.';
+                default: return '';
+            }
+        }
+        
+        function updateLoadLimit(newLimit) {
+            stationData.loadLimit = parseInt(newLimit, 10);
+            if (stationData.loadLimit < 50) stationData.loadLimit = 50;
+            aiLogs.unshift({ 
+                id: logIdCounter++, 
+                time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                type: 'Action', 
+                message: `Owner set new Grid Load Limit to **${stationData.loadLimit} kW** as per utility contract.`,
+                details: `System Load Limit constraint updated. This value dictates the maximum grid power draw the AI will allow.`
+            });
+            reRenderCurrentPage();
+        }
+
+        function updateDefaultPriority(newPriority) {
+            stationData.defaultPriority = newPriority;
+            aiLogs.unshift({ 
+                id: logIdCounter++, 
+                time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                type: 'Action', 
+                message: `Owner set new Default Priority to **${newPriority}** for all new sessions.`,
+                details: `All new, unmanaged charging sessions will now inherit the ${newPriority} priority level by default.`
+            });
+            reRenderCurrentPage();
+        }
+        
+        // NEW FUNCTION: Toggles the master AI switch
+        function toggleMasterAI() {
+            stationData.masterAiEnabled = !stationData.masterAiEnabled;
+            const status = stationData.masterAiEnabled ? 'Enabled' : 'Disabled';
+            aiLogs.unshift({ 
+                id: logIdCounter++, 
+                time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                type: 'Action', 
+                message: `Owner ${status} the **Master AI Control** system.`,
+                details: `All automated load-balancing, peak-shaving, and priority-based throttling is now ${status}. All sessions will charge at their maximum allowed rate.`
+            });
+            reRenderCurrentPage();
+        }
+
+        function adjustPriority(id, newPriority) {
+            const session = chargingSessions.find(s => s.id === id);
+            if (session) {
+                session.priority = newPriority;
+                aiLogs.unshift({ 
+                    id: logIdCounter++, 
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                    type: 'Action', 
+                    message: `Owner set **${session.id}** priority to **${newPriority}**.`,
+                    details: `Priority for ${session.id} manually adjusted by owner. AI will now prioritize/deprioritize this session based on the new setting.`
+                });
+            }
+            // Re-render handled by updateLiveData interval, or can force a sessions-only update
+        }
+
+        function updateDepartureTime(id, newTime) {
+            const session = chargingSessions.find(s => s.id === id);
+            if (session) {
+                session.departure = newTime;
+                aiLogs.unshift({ 
+                    id: logIdCounter++, 
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                    type: 'Info', 
+                    message: `Owner updated departure time for **${session.id}** to **${newTime}**.`,
+                    details: `New departure time factored into AI charging rate calculation for ${session.id}.`
+                });
+            }
+        }
+        
+        function toggleAI(chargerNumber) {
+            const session = chargingSessions.find(s => s.charger === chargerNumber);
+            if (session) {
+                session.aiDisabled = !session.aiDisabled;
+                const status = session.aiDisabled ? 'Disabled' : 'Enabled';
+                aiLogs.unshift({ 
+                    id: logIdCounter++, 
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                    type: 'Action', 
+                    message: `AI control ${status} for **${session.id}** (Charger #${chargerNumber}).`,
+                    details: `Local AI control override: AI will not adjust charging power for this specific session regardless of grid load.`
+                });
+            }
+        }
+
+        function togglePauseCharging(id) {
+            const session = chargingSessions.find(s => s.id === id);
+            if (session) {
+                session.isPaused = !session.isPaused;
+                const status = session.isPaused ? 'Paused' : 'Resumed';
+                aiLogs.unshift({ 
+                    id: logIdCounter++, 
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }), 
+                    type: 'Action', 
+                    message: `Owner ${status} charging for **${session.id}**.`,
+                    details: `Charging session manually ${status}. Power draw for ${session.id} is now ${session.isPaused ? '0.0kW' : 'resuming based on priority'}.`
+                });
+            }
+        }
+        
+        // --- Chart Function ---
+        function renderLoadChart() {
+            const ctx = document.getElementById('liveLoadChart');
+            if (!ctx) return;
+
+            loadChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: loadHistoryLabels,
+                    datasets: [{
+                        label: 'Grid Load (kW)',
+                        data: loadHistory,
+                        borderColor: '#0d9488', // Teal-600
+                        backgroundColor: 'rgba(13, 148, 136, 0.2)',
+                        tension: 0.3,
+                        fill: true,
+                        borderWidth: 2,
+                    },
+                    {
+                        label: 'Load Limit',
+                        data: Array(loadHistory.length).fill(stationData.loadLimit),
+                        borderColor: '#dc2626', // Red-600
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        borderWidth: 1.5,
+                        backgroundColor: 'transparent',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: stationData.loadLimit + 20,
+                            title: {
+                                display: true,
+                                text: 'Power (kW)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    }
+                }
+            });
+        }
+        
+        // NEW CHART FUNCTION for Revenue (Required for Revenue page)
+        let revenueChart = null;
+
+        function renderRevenueChart() {
+            const ctx = document.getElementById('revenueComparisonChart');
+            if (!ctx) return;
+            
+            // Generate some simulated monthly data
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const currentMonthIndex = new Date().getMonth();
+            const monthlyLabels = months.slice(0, currentMonthIndex + 1);
+            
+            // Simulated data: Revenue is slightly higher than cost
+            const revenueData = [1800, 2100, 2500, 2400, 2800, 3100, 2900, 3300, 3500, 3400, 3800, 4200];
+            const costData = [500, 650, 800, 750, 950, 1100, 1050, 1200, 1300, 1250, 1400, 1550];
+            
+            const currentRevenueData = revenueData.slice(0, monthlyLabels.length);
+            const currentCostData = costData.slice(0, monthlyLabels.length);
+
+
+            revenueChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: monthlyLabels,
+                    datasets: [
+                        {
+                            label: 'Total Revenue ($)',
+                            data: currentRevenueData,
+                            backgroundColor: '#0d9488', // Teal-600
+                            borderColor: '#0d9488',
+                            borderWidth: 1,
+                        },
+                        {
+                            label: 'Total Energy Cost ($)',
+                            data: currentCostData,
+                            backgroundColor: '#ef4444', // Red-500
+                            borderColor: '#ef4444',
+                            borderWidth: 1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Amount ($)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    }
+                }
+            });
+        }
+
+
+        // --- Render Functions (SPA Pages) ---
+        
+        function renderDashboard() { 
+            // Grid load warning for visual feedback
+            const loadColor = stationData.gridLoad > stationData.loadLimit * 0.9 ? 'border-red-500' : stationData.gridLoad > stationData.loadLimit * 0.7 ? 'border-yellow-500' : 'border-teal-500';
+            
+            const stationVisual = `
+                <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 ${loadColor} mb-6 h-[400px]">
+                    <h3 class="text-xl font-bold text-gray-700 mb-4">Live Load Balancing Chart (Last 6 Mins)</h3>
+                    <div class="h-[300px]">
+                        <canvas id="liveLoadChart"></canvas>
+                    </div>
+                </div>
+            `;
+
+            const alertLogs = aiLogs.filter(log => log.type === 'Alert' || log.type === 'Action').slice(0, 5).map(log => `
+                <li class="p-3 border-b border-gray-100 flex justify-between items-center transition duration-150 ${log.type === 'Alert' ? 'bg-red-50 text-red-700' : 'hover:bg-blue-50 text-gray-700'}">
+                    <span class="text-xs text-gray-400 w-16">${log.time}</span>
+                    <span class="font-medium text-sm flex-1">${log.message.replace(/(\*\*)/g, '<b>$&</b>')}</span>
+                </li>
+            `).join('');
+
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">🏠 Live Station Dashboard</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-teal-500">
+                        <p class="text-sm text-gray-500">Chargers In Use / Total</p>
+                        <p class="text-5xl font-extrabold mt-1 text-teal-700">${stationData.chargersInUse} / 12</p>
+                    </div>
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 ${stationData.gridLoad > stationData.loadLimit * 0.9 ? 'border-red-500' : 'border-yellow-500'}">
+                        <p class="text-sm text-gray-500">Grid Load (kW) / Limit</p>
+                        <p class="text-5xl font-extrabold mt-1">${stationData.gridLoad} / ${stationData.loadLimit}</p>
+                    </div>
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-yellow-500">
+                        <p class="text-sm text-gray-500">Power Being Consumed (kW)</p>
+                        <p class="text-5xl font-extrabold mt-1">${stationData.powerConsumed.toFixed(1)}</p>
+                    </div>
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-green-500">
+                        <p class="text-sm text-gray-500">AI Optimization Status</p>
+                        <p class="text-xl font-semibold ${stationData.masterAiEnabled ? 'text-green-700' : 'text-red-600'} mt-2">${stationData.aiStatus}</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2">
+                        ${stationVisual}
+                    </div>
+                    <div class="bg-white rounded-xl shadow-xl p-6">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">🔔 Recent AI Actions</h3>
+                        <ul class="divide-y divide-gray-200 max-h-80 overflow-y-auto">
+                            ${alertLogs.length > 0 ? alertLogs : '<li class="p-3 text-gray-500">No recent critical actions or alerts.</li>'}
+                        </ul>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+            renderLoadChart();
+        }
+
+        function renderSessions() {
+             const tableRows = chargingSessions.map(session => `
+                <tr class="hover:bg-gray-50 transition duration-150 border-b">
+                    <td class="p-4 text-gray-600 font-semibold">${session.id}</td>
+                    <td class="p-4 text-center">${session.charger}</td>
+                    <td class="p-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-10 text-right">${session.battery}%</span>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="bg-teal-600 h-2.5 rounded-full" style="width: ${session.battery}%;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-4 text-center">${session.target}%</td>
+                    <td class="p-4 text-center">
+                        <input type="time" value="${session.departure}" onchange="updateDepartureTime('${session.id}', this.value)" class="p-1 border rounded text-sm w-24">
+                    </td>
+                    <td class="p-4 text-center">
+                        <select onchange="adjustPriority('${session.id}', this.value)" class="p-1 border rounded text-sm w-28 font-medium ${session.priority === 'High' ? 'bg-red-100 text-red-700' : session.priority === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}">
+                            <option value="High" ${session.priority === 'High' ? 'selected' : ''}>High</option>
+                            <option value="Medium" ${session.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                            <option value="Low" ${session.priority === 'Low' ? 'selected' : ''}>Low</option>
+                        </select>
+                    </td>
+                    <td class="p-4 text-center font-semibold text-teal-600">${session.power.toFixed(1)} kW</td>
+                    <td class="p-4 text-sm font-medium ${session.status.includes('Slowing') || session.status.includes('Critical') ? 'text-red-600' : session.status.includes('Normal') ? 'text-green-600' : 'text-blue-600'}">${session.status}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="togglePauseCharging('${session.id}')" class="text-xs px-3 py-1 rounded-full text-white transition duration-150 shadow-md ${session.isPaused ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'}">
+                            ${session.isPaused ? 'Resume' : 'Pause'}
+                        </button>
+                    </td>
+                    <td class="p-4 text-center">
+                        <label class="switch">
+                            <input type="checkbox" ${!session.aiDisabled ? 'checked' : ''} onchange="toggleAI(${session.charger})">
+                            <span class="slider"></span>
+                        </label>
+                    </td>
+                </tr>
+            `).join('');
+
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">🔌 Charging Sessions Management</h2>
+                
+                <div class="bg-white p-6 rounded-xl shadow-xl">
+                    <h3 class="text-2xl font-bold text-gray-700 mb-6">Live Session List (${chargingSessions.length} Charging)</h3>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead>
+                                <tr class="bg-gray-50">
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EV ID</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Charger</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Battery (%)</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Departure Time</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Power (kW)</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">AI Control</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                ${tableRows.length > 0 ? tableRows : `<tr><td colspan="10" class="text-center p-8 text-lg text-gray-500">No active charging sessions.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+        }
+
+        function renderGrid() {
+            const loadColor = stationData.gridLoad > stationData.loadLimit * 0.9 ? 'text-red-600' : stationData.gridLoad > stationData.loadLimit * 0.7 ? 'text-yellow-600' : 'text-teal-600';
+
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">📈 Energy & Grid Load Management</h2>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+                    <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-blue-500">
+                        <p class="text-lg text-gray-500">Current Grid Load</p>
+                        <p class="text-6xl font-extrabold mt-1 ${loadColor}">${stationData.gridLoad} <span class="text-3xl text-gray-400">kW</span></p>
+                        <p class="mt-2 text-sm text-gray-600">Limit: ${stationData.loadLimit} kW</p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-green-500">
+                        <p class="text-lg text-gray-500">AI Master Control</p>
+                        <div class="flex items-center justify-between mt-3">
+                            <span class="text-3xl font-bold ${stationData.masterAiEnabled ? 'text-green-700' : 'text-red-600'}">${stationData.masterAiEnabled ? 'Enabled' : 'Disabled'}</span>
+                            <label class="switch">
+                                <input type="checkbox" ${stationData.masterAiEnabled ? 'checked' : ''} onchange="toggleMasterAI()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <p class="mt-2 text-sm text-gray-600">${stationData.aiStatus}</p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-xl border-l-4 border-yellow-500">
+                        <p class="text-lg text-gray-500">Set Max Grid Load Limit</p>
+                        <input type="number" id="loadLimitInput" value="${stationData.loadLimit}" min="50" max="200" class="text-4xl font-extrabold mt-1 w-24 border-b border-gray-300 focus:border-teal-500 outline-none" onchange="updateLoadLimit(this.value)">
+                        <span class="text-xl text-gray-400">kW</span>
+                        <p class="mt-2 text-sm text-gray-600">The AI will work to never exceed this value.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-xl h-[450px]">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">Live Grid Load History</h3>
+                    <div class="h-[350px]">
+                        <canvas id="liveLoadChart"></canvas>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+            renderLoadChart();
+        }
+
+        function renderLogs() {
+            // Apply sorting (newest first)
+            const sortedLogs = aiLogs.sort((a, b) => b.id - a.id); 
+
+            const logRows = sortedLogs.map(log => `
+                <div class="log-grid p-4 border-b hover:bg-gray-50 transition duration-150 ${log.type === 'Alert' ? 'bg-red-50' : ''}">
+                    <span class="text-xs text-gray-400">${log.time}</span>
+                    <span class="font-bold text-sm ${log.type === 'Alert' ? 'text-red-700' : log.type === 'Action' ? 'text-blue-600' : 'text-gray-600'}">${log.type}</span>
+                    <span class="text-sm text-gray-700">${log.message.replace(/(\*\*)/g, '<b>$&</b>')}</span>
+                    <div>${getLogButton(log)}</div> 
+                </div>
+            `).join('');
+
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">🤖 AI Optimization Logs</h2>
+                
+                <div class="bg-white rounded-xl shadow-xl">
+                    <div class="p-6 border-b">
+                        <h3 class="text-2xl font-bold text-gray-700">Detailed AI System Event Log</h3>
+                        <p class="text-sm text-gray-500">All actions, alerts, and system information recorded by the AI Energy Management System.</p>
+                    </div>
+                    
+                    <div class="log-grid p-4 bg-gray-50 font-semibold text-xs uppercase tracking-wider text-gray-500 border-b">
+                        <span>Time</span>
+                        <span>Type</span>
+                        <span>Message</span>
+                        <span>Details</span>
+                    </div>
+
+                    <div class="custom-scroll max-h-[70vh] overflow-y-auto divide-y divide-gray-200">
+                        ${logRows.length > 0 ? logRows : '<div class="p-8 text-center text-lg text-gray-500">No system log entries found.</div>'}
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+        }
+        
+        /* CONDITION CHANGE: 
+            Implementation of the Revenue & Reports page (renderRevenue). 
+        */
+        function renderRevenue() {
+            // Calculate key metrics for the cards
+            const dailyNetProfit = stationData.revenueToday - stationData.energyCostToday;
+            const dailyTotalSavings = stationData.costSavingsAI + stationData.peakAvoidanceSavings;
+            const monthlyRevenueProjection = (stationData.revenueToday / (new Date().getHours() / 24)) * 30 + stationData.fixedMonthlyFee;
+            const todaykWhSold = stationData.revenueToday / stationData.avgPricePerkWh;
+
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">💰 Revenue & Reports</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-teal-500">
+                        <p class="text-sm text-gray-500">Total Revenue (Today)</p>
+                        <p class="text-4xl font-extrabold mt-1 text-teal-700">$${stationData.revenueToday.toFixed(2)}</p>
+                        <p class="text-sm text-gray-600 mt-2">${todaykWhSold.toFixed(0)} kWh Sold</p>
+                    </div>
+
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 ${dailyNetProfit > 0 ? 'border-green-500' : 'border-red-500'}">
+                        <p class="text-sm text-gray-500">Net Profit (Today)</p>
+                        <p class="text-4xl font-extrabold mt-1 ${dailyNetProfit > 0 ? 'text-green-700' : 'text-red-700'}">$${dailyNetProfit.toFixed(2)}</p>
+                        <p class="text-sm text-gray-600 mt-2">Cost: $${stationData.energyCostToday.toFixed(2)}</p>
+                    </div>
+
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-blue-500">
+                        <p class="text-sm text-gray-500">AI System Savings (Today)</p>
+                        <p class="text-4xl font-extrabold mt-1 text-blue-700">$${dailyTotalSavings.toFixed(2)}</p>
+                        <p class="text-sm text-gray-600 mt-2">Peak Avoidance: $${stationData.peakAvoidanceSavings.toFixed(2)}</p>
+                    </div>
+
+                    <div class="p-6 bg-white rounded-xl shadow-xl border-b-4 border-yellow-500">
+                        <p class="text-sm text-gray-500">Monthly Projection</p>
+                        <p class="text-4xl font-extrabold mt-1 text-yellow-700">$${monthlyRevenueProjection.toFixed(2)}</p>
+                        <p class="text-sm text-gray-600 mt-2">Based on current daily rate.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-xl h-[500px] mb-10">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">Monthly Revenue vs. Energy Cost</h3>
+                    <div class="h-[400px]">
+                        <canvas id="revenueComparisonChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-xl">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Detailed Reports Download</h3>
+                    <p class="text-md text-gray-600 mb-4">Generate and download historical reports for accounting and compliance.</p>
+                    
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                            <span class="font-medium text-gray-700">Quarterly Financial Summary (Q4 2025)</span>
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
+                                Download PDF
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                            <span class="font-medium text-gray-700">AI Optimization Savings Report (Full Year 2025)</span>
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
+                                Download Excel
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                            <span class="font-medium text-gray-700">High Grid Load Incidents Log (Last 30 Days)</span>
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition">
+                                Download CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+            renderRevenueChart(); // Initialize the new chart
+        }
+
+        function renderSettings() {
+            const html = `
+                <h2 class="text-4xl font-extrabold text-gray-800 mb-8">⚙️ Station Settings & AI Configuration</h2>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-xl space-y-6">
+                        <h3 class="text-2xl font-bold text-gray-800 border-b pb-3">General Station Settings</h3>
+                        
+                        <div class="pb-4 border-b">
+                            <label for="loadLimitSetting" class="block text-sm font-medium text-gray-700 mb-2">Max Grid Load Limit (kW)</label>
+                            <input type="number" id="loadLimitSetting" value="${stationData.loadLimit}" min="50" max="200" class="p-3 border rounded-lg w-24 text-lg font-semibold" onchange="updateLoadLimit(this.value)">
+                            <span class="ml-2 text-xl text-gray-500">kW</span>
+                            <p class="text-xs text-gray-500 mt-1">Contracted maximum power draw from the main grid supply.</p>
+                        </div>
+
+                        <div class="pb-4 border-b">
+                            <label for="defaultPriority" class="block text-sm font-medium text-gray-700 mb-2">Default Session Priority</label>
+                            <select id="defaultPriority" onchange="updateDefaultPriority(this.value)" class="p-3 border rounded-lg w-48 text-lg font-semibold">
+                                <option value="High" ${stationData.defaultPriority === 'High' ? 'selected' : ''}>High (Fastest)</option>
+                                <option value="Medium" ${stationData.defaultPriority === 'Medium' ? 'selected' : ''}>Medium (Standard)</option>
+                                <option value="Low" ${stationData.defaultPriority === 'Low' ? 'selected' : ''}>Low (Eco-mode)</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">All new, unmanaged sessions will start with this priority level.</p>
+                        </div>
+                        
+                        <div class="pb-4">
+                            <label for="pricePerkWh" class="block text-sm font-medium text-gray-700 mb-2">EV Charging Price per kWh ($)</label>
+                            <input type="number" id="pricePerkWh" value="${stationData.avgPricePerkWh.toFixed(2)}" step="0.01" class="p-3 border rounded-lg w-24 text-lg font-semibold" onchange="stationData.avgPricePerkWh = parseFloat(this.value); reRenderCurrentPage()">
+                            <span class="ml-2 text-xl text-gray-500">$/kWh</span>
+                            <p class="text-xs text-gray-500 mt-1">The rate charged to EV drivers.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-xl shadow-xl space-y-6">
+                        <h3 class="text-2xl font-bold text-gray-800 border-b pb-3">AI Optimization Controls</h3>
+                        
+                        <div class="flex items-center justify-between pb-4 border-b">
+                            <div>
+                                <h4 class="text-lg font-medium text-gray-700">Master AI Control</h4>
+                                <p class="text-xs text-gray-500">Enables/Disables all automatic load balancing across the entire station.</p>
+                                <p class="text-sm font-semibold mt-1 ${stationData.masterAiEnabled ? 'text-green-700' : 'text-red-600'}">Status: ${stationData.masterAiEnabled ? 'Active' : 'Bypassed'}</p>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" ${stationData.masterAiEnabled ? 'checked' : ''} onchange="toggleMasterAI()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="pb-4">
+                            <h4 class="text-lg font-medium text-gray-700">Fixed Monthly Portal/Subscription Fee</h4>
+                            <input type="number" id="fixedFee" value="${stationData.fixedMonthlyFee.toFixed(2)}" step="1.00" class="p-3 border rounded-lg w-32 text-lg font-semibold" onchange="stationData.fixedMonthlyFee = parseFloat(this.value); reRenderCurrentPage()">
+                            <span class="ml-2 text-xl text-gray-500">$</span>
+                            <p class="text-xs text-gray-500 mt-1">This is a simulated fixed revenue component for reporting.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('content-area').innerHTML = html;
+        }
+
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check initial login state
+            if (!isLoggedIn) {
+                renderLogin();
+            } else {
+                navigateTo('dashboard'); // Start on dashboard
+                // Set up the live data update interval
+                setInterval(updateLiveData, 5000); 
+            }
+
+            // Global navigation handler
+            document.getElementById('sidebar').addEventListener('click', (e) => {
+                if (e.target.closest('.nav-link')) {
+                    e.preventDefault();
+                    const page = e.target.closest('.nav-link').dataset.page;
+                    navigateTo(page);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
